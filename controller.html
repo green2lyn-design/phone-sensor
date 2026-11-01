@@ -1,0 +1,150 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+ content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>아이폰 컨트롤러</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+body {
+  background: #101827;
+  color: white;
+  font-family: sans-serif;
+  text-align: center;
+  padding: 20px;
+}
+input, button {
+  width: 100%;
+  padding: 17px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 13px;
+  font-size: 20px;
+  box-sizing: border-box;
+}
+input { text-align: center; }
+button {
+  background: #2563eb;
+  color: white;
+  font-weight: bold;
+}
+#jump { background: #ea580c; height: 130px; }
+#restart { background: #15803d; }
+#status { margin: 20px 0; }
+</style>
+</head>
+<body>
+
+<h1>📱 아이폰 컨트롤러</h1>
+<p>컴퓨터 화면의 연결 코드를 입력하세요.</p>
+
+<input id="peerId" placeholder="연결 코드">
+<button id="connect">연결하기</button>
+
+<div id="status">연결되지 않았어요.</div>
+
+<button id="jump" disabled>점프!</button>
+<button id="restart" disabled>다시 시작</button>
+
+<p id="tilt">기울기: 0</p>
+
+<script>
+let peer;
+let conn;
+let tilt = 0;
+let sendTimer;
+
+const statusEl = document.getElementById("status");
+const jumpBtn = document.getElementById("jump");
+const restartBtn = document.getElementById("restart");
+
+function send(data) {
+  if (conn && conn.open) {
+    conn.send(data);
+  }
+}
+
+function updateTilt(event) {
+  if (typeof event.gamma === "number") {
+    tilt = Math.max(-1, Math.min(1, event.gamma / 35));
+
+    document.getElementById("tilt").textContent =
+      "기울기: " + Math.round(tilt * 100);
+  }
+}
+
+async function enableSensors() {
+  if (
+    typeof DeviceOrientationEvent !== "undefined" &&
+    typeof DeviceOrientationEvent.requestPermission === "function"
+  ) {
+    const permission =
+      await DeviceOrientationEvent.requestPermission();
+
+    if (permission !== "granted") {
+      throw new Error("센서 권한을 허용해 주세요.");
+    }
+  }
+
+  window.addEventListener("deviceorientation", updateTilt);
+}
+
+document.getElementById("connect").onclick = async () => {
+  const id = document.getElementById("peerId").value.trim();
+
+  if (!id) {
+    statusEl.textContent = "연결 코드를 입력해 주세요.";
+    return;
+  }
+
+  try {
+    await enableSensors();
+  } catch (error) {
+    statusEl.textContent = error.message;
+    return;
+  }
+
+  statusEl.textContent = "연결 중...";
+
+  peer = new Peer();
+
+  peer.on("open", () => {
+    conn = peer.connect(id, { reliable: true });
+
+    conn.on("open", () => {
+      statusEl.textContent = "연결 완료!";
+      jumpBtn.disabled = false;
+      restartBtn.disabled = false;
+
+      sendTimer = setInterval(() => {
+        send({ type: "control", tilt: tilt });
+      }, 60);
+    });
+
+    conn.on("close", () => {
+      statusEl.textContent = "연결이 끊어졌어요.";
+      jumpBtn.disabled = true;
+      restartBtn.disabled = true;
+      clearInterval(sendTimer);
+    });
+  });
+
+  peer.on("error", error => {
+    statusEl.textContent = "연결 오류: " + error.type;
+  });
+};
+
+jumpBtn.addEventListener("pointerdown", event => {
+  event.preventDefault();
+  send({ type: "control", tilt: tilt, jump: true });
+});
+
+restartBtn.onclick = () => {
+  send({ type: "control", tilt: 0, restart: true });
+};
+</script>
+
+</body>
+</html>
