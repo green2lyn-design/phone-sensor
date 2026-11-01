@@ -1,0 +1,295 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>iPhone Motion Sensor</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 20px;
+  background: #f1f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #172033;
+}
+
+.container {
+  max-width: 500px;
+  margin: auto;
+}
+
+h1 { font-size: 25px; }
+
+.card {
+  background: white;
+  padding: 18px;
+  border-radius: 18px;
+  margin-bottom: 15px;
+  box-shadow: 0 3px 12px #0000000d;
+}
+
+.status {
+  font-weight: bold;
+  color: #64748b;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.sensor {
+  background: #edf4ff;
+  padding: 13px 4px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.sensor small {
+  display: block;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.value {
+  font-size: 18px;
+  font-weight: bold;
+  color: #1769aa;
+  overflow-wrap: anywhere;
+}
+
+button {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 15px;
+  font-size: 16px;
+  font-weight: bold;
+  margin-top: 9px;
+}
+
+#start { background: #1769aa; color: white; }
+#stop { background: #dc4545; color: white; }
+#save { background: #16834b; color: white; }
+
+button:disabled { opacity: .4; }
+
+.info {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>📱 동작 센서 측정기</h1>
+<p class="info">iPhone 12 mini · Safari</p>
+
+<div class="card">
+  <h3>측정 상태</h3>
+  <p class="status" id="status">대기 중</p>
+  <p>수집 데이터: <b id="count">0</b>개</p>
+
+  <button id="start">측정 시작</button>
+  <button id="stop" disabled>측정 중지</button>
+  <button id="save" disabled>CSV 저장</button>
+</div>
+
+<div class="card">
+  <h3>가속도 (m/s²)</h3>
+  <div class="grid">
+    <div class="sensor">
+      <small>X</small>
+      <span class="value" id="ax">-</span>
+    </div>
+    <div class="sensor">
+      <small>Y</small>
+      <span class="value" id="ay">-</span>
+    </div>
+    <div class="sensor">
+      <small>Z</small>
+      <span class="value" id="az">-</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>자이로 회전속도 (°/s)</h3>
+  <div class="grid">
+    <div class="sensor">
+      <small>Alpha</small>
+      <span class="value" id="alpha">-</span>
+    </div>
+    <div class="sensor">
+      <small>Beta</small>
+      <span class="value" id="beta">-</span>
+    </div>
+    <div class="sensor">
+      <small>Gamma</small>
+      <span class="value" id="gamma">-</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>측정 안내</h3>
+  <p class="info">
+    1. 측정 시작을 누릅니다.<br>
+    2. 센서 권한을 허용합니다.<br>
+    3. 아이폰을 천천히 움직입니다.<br>
+    4. 측정 중지 후 CSV를 저장합니다.
+  </p>
+</div>
+
+</div>
+
+<script>
+let recording = false;
+let data = [];
+let startTime = 0;
+
+const $ = id => document.getElementById(id);
+
+function format(value) {
+  return Number.isFinite(value) ? value.toFixed(3) : "-";
+}
+
+function handleMotion(event) {
+  if (!recording) return;
+
+  const acc = event.accelerationIncludingGravity || {};
+  const rot = event.rotationRate || {};
+
+  const row = {
+    time: ((performance.now() - startTime) / 1000).toFixed(3),
+    ax: Number.isFinite(acc.x) ? acc.x : "",
+    ay: Number.isFinite(acc.y) ? acc.y : "",
+    az: Number.isFinite(acc.z) ? acc.z : "",
+    alpha: Number.isFinite(rot.alpha) ? rot.alpha : "",
+    beta: Number.isFinite(rot.beta) ? rot.beta : "",
+    gamma: Number.isFinite(rot.gamma) ? rot.gamma : ""
+  };
+
+  data.push(row);
+
+  $("ax").textContent = format(acc.x);
+  $("ay").textContent = format(acc.y);
+  $("az").textContent = format(acc.z);
+
+  $("alpha").textContent = format(rot.alpha);
+  $("beta").textContent = format(rot.beta);
+  $("gamma").textContent = format(rot.gamma);
+
+  $("count").textContent = data.length;
+}
+
+$("start").addEventListener("click", async () => {
+  if (!window.isSecureContext) {
+    alert("HTTPS 주소로 접속해야 센서를 사용할 수 있습니다.");
+    return;
+  }
+
+  if (!("DeviceMotionEvent" in window)) {
+    alert("이 브라우저는 동작 센서를 지원하지 않습니다.");
+    return;
+  }
+
+  try {
+    if (typeof DeviceMotionEvent.requestPermission === "function") {
+      const permission =
+        await DeviceMotionEvent.requestPermission();
+
+      if (permission !== "granted") {
+        alert("동작 센서 권한이 필요합니다.");
+        return;
+      }
+    }
+
+    if (
+      typeof DeviceOrientationEvent !== "undefined" &&
+      typeof DeviceOrientationEvent.requestPermission === "function"
+    ) {
+      const permission =
+        await DeviceOrientationEvent.requestPermission();
+
+      if (permission !== "granted") {
+        alert("방향 센서 권한이 필요합니다.");
+        return;
+      }
+    }
+
+    data = [];
+    startTime = performance.now();
+    recording = true;
+
+    window.addEventListener("devicemotion", handleMotion);
+
+    $("status").textContent = "🟢 측정 중";
+    $("count").textContent = "0";
+    $("start").disabled = true;
+    $("stop").disabled = false;
+    $("save").disabled = true;
+
+  } catch (error) {
+    alert("센서 실행 오류: " + error.message);
+  }
+});
+
+$("stop").addEventListener("click", () => {
+  recording = false;
+  window.removeEventListener("devicemotion", handleMotion);
+
+  $("status").textContent = "측정 완료";
+  $("start").disabled = false;
+  $("stop").disabled = true;
+  $("save").disabled = data.length === 0;
+});
+
+$("save").addEventListener("click", () => {
+  if (!data.length) return;
+
+  const headers = [
+    "time_sec",
+    "acc_x", "acc_y", "acc_z",
+    "gyro_alpha", "gyro_beta", "gyro_gamma"
+  ];
+
+  const csv = [
+    headers.join(","),
+    ...data.map(row =>
+      [
+        row.time, row.ax, row.ay, row.az,
+        row.alpha, row.beta, row.gamma
+      ].join(",")
+    )
+  ].join("\n");
+
+  const blob = new Blob(
+    ["\uFEFF" + csv],
+    { type: "text/csv;charset=utf-8;" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = "iphone_motion_data.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+</script>
+
+</body>
+</html>
